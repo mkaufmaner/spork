@@ -22,6 +22,8 @@ class SharedMemory
     private $ppid;
     private $signal;
 
+    private $key;
+
     /**
      * Constructor.
      *
@@ -42,6 +44,8 @@ class SharedMemory
         $this->pid  = $pid;
         $this->ppid = $ppid;
         $this->signal = $signal;
+
+        $this->key = 'spork.'.$this->pid;
     }
 
     /**
@@ -51,15 +55,14 @@ class SharedMemory
      */
     public function receive()
     {
-        if (($shmId = @shmop_open($this->pid, 'a', 0, 0)) > 0) {
-            $serializedMessages = shmop_read($shmId, 0, shmop_size($shmId));
-            shmop_delete($shmId);
-            shmop_close($shmId);
+        $messages = array();
 
-            return unserialize($serializedMessages);
+        if (apcu_exists($this->key)) {
+            $messages = apcu_fetch($this->key);
+            apcu_delete($this->key);
         }
 
-        return array();
+        return $messages;
     }
 
     /**
@@ -73,26 +76,29 @@ class SharedMemory
     {
         $messageArray = array();
 
-        if (($shmId = @shmop_open($this->pid, 'a', 0, 0)) > 0) {
-            // Read any existing messages in shared memory
-            $readMessage = shmop_read($shmId, 0, shmop_size($shmId));
-            $messageArray[] = unserialize($readMessage);
-            shmop_delete($shmId);
-            shmop_close($shmId);
+        // Read any existing messages in apcu
+        if(apcu_exists($this->key)){
+            $readMessage = apcu_fetch($this->key);
+
+            if($readMessage !== false){
+                //$messageArray[] = unserialize($readMessage);
+                $messageArray[] = $readMessage;
+            }
+
+            //cleanup
+            apcu_delete($this->key);
+        }else{
+
         }
 
         // Add the current message to the end of the array, and serialize it
         $messageArray[] = $message;
-        $serializedMessage = serialize($messageArray);
 
-        // Write new serialized message to shared memory
-        $shmId = shmop_open($this->pid, 'c', 0644, strlen($serializedMessage));
-        if (!$shmId) {
-            throw new ProcessControlException(sprintf('Not able to create shared memory segment for PID: %s', $this->pid));
-        } else if (shmop_write($shmId, $serializedMessage, 0) !== strlen($serializedMessage)) {
-            throw new ProcessControlException(
-                sprintf('Not able to write message to shared memory segment for segment ID: %s', $shmId)
-            );
+        // Write new serialized message to apcu
+        $store = apcu_store($this->key, $messageArray, 0);
+
+        if($store === false){
+            throw new ProcessControlException(sprintf('Not able to create cache for PID: %s with key %s', $this->pid, $this->key));
         }
 
         if (false === $signal) {
