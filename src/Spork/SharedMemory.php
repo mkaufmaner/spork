@@ -70,9 +70,9 @@ class SharedMemory
      *
      * @param mixed   $message The message to send
      * @param integer $signal  The signal to send afterward
-     * @param integer $pause   The number of microseconds to pause after signalling
+     * @param integer $pause   The number of microseconds to pause after signalling (default being 1/10 of a second)
      */
-    public function send($message, $signal = null, $pause = 500)
+    public function send($message, $signal = null, $pause = 100000)
     {
         $messageArray = array();
 
